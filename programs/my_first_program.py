@@ -1,12 +1,19 @@
 from nada_dsl import *
 
-
 def nada_main():
     party1 = Party(name="Party1")
-    my_int1 = SecretInteger(Input(name="my_int1", party=party1))
-    my_int2 = SecretInteger(Input(name="my_int2", party=party1))
+    my_int1 = SecretInteger(Input(name="my_int1", party=party1))  # This will be the message
+    my_int2 = SecretInteger(Input(name="my_int2", party=party1))  # This will be the key
 
-    # write the computation for your program here - use my_int1 and my_int2 as inputs
-    # make sure you change the output below to be your new output
+    # Encrypt the message
+    encrypted_message = my_int1 ^ my_int2
 
-    return [Output(my_int1, "my_output", party1)]
+    # Decrypt the message
+    decrypted_message = encrypted_message ^ my_int2
+
+    # Outputs for encrypted and decrypted messages
+    encrypted_output = Output(encrypted_message, "encrypted_output", party1)
+    decrypted_output = Output(decrypted_message, "decrypted_output", party1)
+
+    return [encrypted_output, decrypted_output]
+
