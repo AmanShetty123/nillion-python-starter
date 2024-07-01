@@ -1,100 +1,153 @@
+# Import necessary libraries
 from nada_dsl import *
-import random
-from Crypto.Cipher import AES
-import hashlib
-import logging
-import time
-from typing import Tuple
+import numpy as np
+import plotly.graph_objects as go
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
-
-def generate_random_secret(length: int) -> int:
-    """Generate a random secret integer of specified length."""
-    return random.getrandbits(length)
-
-def aes_encrypt_decrypt(message: bytes, key: bytes, mode: str) -> bytes:
-    """Encrypt or decrypt a message using AES."""
-    cipher = AES.new(key, AES.MODE_EAX)
-    if mode == 'encrypt':
-        ciphertext, tag = cipher.encrypt_and_digest(message)
-        return cipher.nonce + ciphertext
-    elif mode == 'decrypt':
-        nonce = message[:16]
-        ciphertext = message[16:]
-        cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
-        return cipher.decrypt(ciphertext)
-
-def hash_key(key: str) -> bytes:
-    """Generate a SHA-256 hash of the key."""
-    return hashlib.sha256(key.encode()).digest()
-
+# Define the main function
 def nada_main():
-    logging.info("Starting the complex NADA program...")
-
+    # Define two parties
     party1 = Party(name="Party1")
-    my_int1 = SecretInteger(Input(name="my_int1", party=party1))  # This will be the message
-    my_int2 = SecretInteger(Input(name="my_int2", party=party1))  # This will be the key
-
-    # Encrypt the message with XOR operation
-    logging.info("Encrypting the message with XOR operation...")
-    encrypted_message_xor = my_int1 ^ my_int2
-
-    # Decrypt the message with XOR operation
-    logging.info("Decrypting the message with XOR operation...")
-    decrypted_message_xor = encrypted_message_xor ^ my_int2
-
-    # Generate a random secret key
-    logging.info("Generating a random secret key...")
-    secret_key = generate_random_secret(128)  # 128-bit key
-
-    # Convert the integer message and key to bytes for AES encryption
-    message_bytes = my_int1.to_bytes((my_int1.bit_length() + 7) // 8, byteorder='big')
-    key_bytes = secret_key.to_bytes((secret_key.bit_length() + 7) // 8, byteorder='big')
-
-    # Encrypt the message with AES
-    logging.info("Encrypting the message with AES...")
-    encrypted_message_aes = aes_encrypt_decrypt(message_bytes, key_bytes, 'encrypt')
-
-    # Decrypt the message with AES
-    logging.info("Decrypting the message with AES...")
-    decrypted_message_aes = aes_encrypt_decrypt(encrypted_message_aes, key_bytes, 'decrypt')
-
-    # Convert decrypted bytes back to integer
-    decrypted_message_aes_int = int.from_bytes(decrypted_message_aes, byteorder='big')
-
-    # Hash the key for secure storage/transmission
-    logging.info("Hashing the key for secure storage/transmission...")
-    hashed_key = hash_key(str(my_int2))
-
-    # Measure performance
-    logging.info("Measuring performance...")
-    start_time = time.time()
-    for _ in range(1000):
-        _ = my_int1 ^ my_int2
-    xor_performance = time.time() - start_time
-
-    start_time = time.time()
-    for _ in range(1000):
-        aes_encrypt_decrypt(message_bytes, key_bytes, 'encrypt')
-    aes_performance = time.time() - start_time
-
-    # Outputs for encrypted and decrypted messages
-    encrypted_output_xor = Output(encrypted_message_xor, "encrypted_output_xor", party1)
-    decrypted_output_xor = Output(decrypted_message_xor, "decrypted_output_xor", party1)
-    encrypted_output_aes = Output(encrypted_message_aes, "encrypted_output_aes", party1)
-    decrypted_output_aes = Output(decrypted_message_aes_int, "decrypted_output_aes", party1)
-    hashed_key_output = Output(hashed_key, "hashed_key_output", party1)
-
-    logging.info("NADA program completed successfully.")
-
+    party2 = Party(name="Party2")
+    
+    # Define secret inputs for each party
+    data1 = SecretArray(Input(name="data1", party=party1), shape=(100, 2))
+    data2 = SecretArray(Input(name="data2", party=party2), shape=(100, 2))
+    
+    # Combine the data securely
+    combined_data = SecretArray.vstack([data1, data2])
+    
+    # Split the data into features (X) and target (y)
+    X = combined_data[:, :-1]
+    y = combined_data[:, -1]
+    
+    # Normalize the features securely
+    scaler = StandardScaler()
+    X_normalized = scaler.fit_transform(X.reveal())
+    
+    # Create polynomial features
+    poly = PolynomialFeatures(degree=2)
+    X_poly = poly.fit_transform(X_normalized)
+    
+    # Perform secure linear regression with cross-validation
+    model = LinearRegression()
+    scores = cross_val_score(model, X_poly, y.reveal(), cv=5)
+    
+    # Fit the model on the entire data
+    model.fit(X_poly, y.reveal())
+    
+    # Get the coefficients and intercept
+    coefficients = model.coef_
+    intercept = model.intercept_
+    
+    # Calculate the mean cross-validation score
+    mean_cv_score = np.mean(scores)
+    
+    # Hyperparameter tuning for RandomForest
+    param_grid = {'n_estimators': [50, 100, 200], 'max_depth': [None, 10, 20, 30]}
+    rf_model = RandomForestRegressor()
+    grid_search = GridSearchCV(rf_model, param_grid, cv=5)
+    grid_search.fit(X_poly, y.reveal())
+    best_rf_model = grid_search.best_estimator_
+    
+    # Make secure predictions with the tuned RandomForest model
+    y_pred = best_rf_model.predict(X_poly)
+    
+    # Evaluate the RandomForest model
+    mse = mean_squared_error(y.reveal(), y_pred)
+    r2 = r2_score(y.reveal(), y_pred)
+    
+    # Secure scalar multiplication (dummy example)
+    scalar = 3
+    secure_scalar_product = scalar * SecretScalar(y.sum())
+    
+    # Securely output the model parameters and evaluation metrics
     return [
-        encrypted_output_xor, decrypted_output_xor,
-        encrypted_output_aes, decrypted_output_aes,
-        hashed_key_output
+        Output(coefficients, "coefficients_output", [party1, party2]),
+        Output(intercept, "intercept_output", [party1, party2]),
+        Output(mean_cv_score, "mean_cv_score_output", [party1, party2]),
+        Output(mse, "mse_output", [party1, party2]),
+        Output(r2, "r2_output", [party1, party2]),
+        Output(secure_scalar_product, "secure_scalar_product_output", [party1, party2])
     ]
 
-# Execute the main function
-outputs = nada_main()
-for output in outputs:
-    logging.info(f"{output.name}: {output.value}")
+# Define a function to plot results using Plotly
+def plot_results(X, y, model, title="Linear Regression Results"):
+    # Predict the values
+    X_poly = PolynomialFeatures(degree=2).fit_transform(X)
+    y_pred = model.predict(X_poly)
+    
+    # Create a scatter plot of the data
+    scatter = go.Scatter(x=X[:, 0], y=y, mode='markers', name='Data')
+    
+    # Create a line plot of the predictions
+    line = go.Scatter(x=X[:, 0], y=y_pred, mode='lines', name='Prediction')
+    
+    # Create the figure
+    fig = go.Figure(data=[scatter, line])
+    
+    # Update layout
+    fig.update_layout(title=title, xaxis_title='Feature', yaxis_title='Target')
+    
+    # Show the figure
+    fig.show()
+
+# Define a function to plot feature importances using seaborn
+def plot_feature_importances(model, X, title="Feature Importances"):
+    importances = model.feature_importances_
+    indices = np.argsort(importances)[::-1]
+    features = [f'Feature {i}' for i in range(X.shape[1])]
+    
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x=importances[indices], y=np.array(features)[indices])
+    plt.title(title)
+    plt.xlabel('Importance')
+    plt.ylabel('Feature')
+    plt.show()
+
+# Now create a main function to execute the program
+if __name__ == "__main__":
+    # Simulate input data
+    data1 = np.random.rand(100, 2)
+    data2 = np.random.rand(100, 2)
+    
+    # Define inputs for the simulation
+    inputs = [
+        Input(name="data1", party=party1, value=data1),
+        Input(name="data2", party=party2, value=data2)
+    ]
+    
+    # Execute the MPC program
+    results = execute_nada_program(nada_main, inputs)
+    
+    # Print the results
+    print("Coefficients:", results["coefficients_output"])
+    print("Intercept:", results["intercept_output"])
+    print("Mean CV Score:", results["mean_cv_score_output"])
+    print("MSE:", results["mse_output"])
+    print("R2 Score:", results["r2_output"])
+    print("Secure Scalar Product:", results["secure_scalar_product_output"])
+    
+    # Plot the results
+    combined_data = np.vstack([data1, data2])
+    X = combined_data[:, :-1]
+    y = combined_data[:, -1]
+    
+    # Normalize and create polynomial features for plotting
+    scaler = StandardScaler()
+    X_normalized = scaler.fit_transform(X)
+    model = LinearRegression()
+    poly = PolynomialFeatures(degree=2)
+    X_poly = poly.fit_transform(X_normalized)
+    model.fit(X_poly, y)
+    
+    plot_results(X_normalized, y, model)
+    
+    # Plot feature importances of the best RandomForest model
+    plot_feature_importances(results["best_rf_model"], X_poly)
